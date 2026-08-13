@@ -221,15 +221,40 @@ curl -sS "$API_ENDPOINT/protected/whoami" -H "Authorization: Bearer pat_live_...
 
 同じエンドポイントは Cognito JWT でも呼び出せます(`auth_method: "jwt"`)。
 
-### 5. MCP サーバとして Claude Code から接続する
+### 5. MCP サーバとして Claude Code / Codex から接続する
 
 `ANY /mcp` には PAT/JWT 両対応の Lambda Authorizer 越しに MCP サーバ
-(Streamable HTTP、ステートレスモード)が配備されています。
+(Streamable HTTP、ステートレスモード)が配備されています。Streamable HTTP は
+Claude Code・Codex CLI のどちらも対応しているトランスポートなので、同じ
+エンドポイントを両方から利用できます。
+
+**Claude Code**
 
 ```bash
 claude mcp add --transport http internal-tools \
   "$API_ENDPOINT/mcp" \
   --header "Authorization: Bearer pat_live_..."
+```
+
+**Codex CLI**
+
+Codex は bearer トークンをそのままコマンドに渡さず、環境変数名を登録して
+実行時に読む方式です。
+
+```bash
+export INTERNAL_TOOLS_PAT="pat_live_..."
+codex mcp add internal-tools \
+  --url "$API_ENDPOINT/mcp" \
+  --bearer-token-env-var INTERNAL_TOOLS_PAT
+```
+
+`~/.codex/config.toml` に直接書く場合は以下と同義です(トークン自体はファイルに
+書かず、`INTERNAL_TOOLS_PAT` 環境変数側で管理してください)。
+
+```toml
+[mcp_servers.internal-tools]
+url = "https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/mcp"
+bearer_token_env_var = "INTERNAL_TOOLS_PAT"
 ```
 
 ツールは `whoami`(認証ユーザー確認)と `get_prejudice`(キーワードに対する固定の
