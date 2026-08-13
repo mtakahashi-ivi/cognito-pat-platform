@@ -79,7 +79,7 @@ cognito-pat-platform/
 ├── admin-console/                # 簡易な社内管理画面 (静的 HTML、ビルド不要)
 │   ├── index.html                # PKCE ログイン + ユーザー管理 UI
 │   └── config.js                 # terraform 出力値を書き込む設定ファイル
-├── .mise.toml                     # Node.js / Terraform のバージョン管理 (mise)
+├── mise.toml                      # Node.js / Terraform のバージョン管理 (mise)
 └── README.md
 ```
 
@@ -91,7 +91,7 @@ cognito-pat-platform/
 - AWS 認証情報(対象アカウントへの Administrator 相当、または Lambda/APIGW/DynamoDB/IAM/Logs/Cognito の作成権限)
 - Cognito User Pool と App Client(**持っていない場合は下記手順 0 で作成できます**)
 
-Node.js / Terraform は `.mise.toml` でバージョンを固定しています。リポジトリのルートで
+Node.js / Terraform は `mise.toml` でバージョンを固定しています。リポジトリのルートで
 1 回実行すれば、両方のツールが所定バージョンでインストールされます。
 
 ```bash
