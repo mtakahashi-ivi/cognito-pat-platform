@@ -1,0 +1,15 @@
+# Node.js
+node_modules/
+backend/dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform/build/
+*.tfvars
+!*.tfvars.example
+
+# Misc
+.DS_Store

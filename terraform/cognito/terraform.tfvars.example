@@ -1,0 +1,14 @@
+# すべて任意 (デフォルトのままでも動作する)
+aws_region   = "ap-northeast-1"
+environment  = "dev"
+project_name = "pat-service"
+
+# Hosted UI ドメインのプレフィックス。空なら自動生成 (グローバル一意である必要あり)
+cognito_domain_prefix = ""
+
+# 管理画面 SPA を作る場合はそのオリジンに合わせる
+callback_urls = ["http://localhost:3000/callback"]
+logout_urls   = ["http://localhost:3000/"]
+
+# true にするとユーザー自身のサインアップを許可
+allow_self_signup = false

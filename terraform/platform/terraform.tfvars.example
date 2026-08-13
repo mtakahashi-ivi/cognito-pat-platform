@@ -1,0 +1,12 @@
+# 必須: 既存の Cognito User Pool / App Client
+cognito_user_pool_id   = "ap-northeast-1_XXXXXXXXX"
+cognito_app_client_ids = ["xxxxxxxxxxxxxxxxxxxxxxxxxx"]
+
+# 任意
+aws_region   = "ap-northeast-1"
+environment  = "dev"
+project_name = "pat-service"
+pat_prefix   = "pat_live_"
+
+# 本番では SPA のオリジンに限定すること
+cors_allow_origins = ["*"]

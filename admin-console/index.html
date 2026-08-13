@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>社内向け Cognito 管理コンソール</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 960px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 1.4rem; }
+  .hidden { display: none !important; }
+  button {
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+  }
+  button:hover { background: #f2f2f2; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { color: #b91c1c; border-color: #b91c1c; }
+  button.danger:hover { background: #fee2e2; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #eee; }
+  th { color: #666; font-weight: 600; }
+  .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .badge { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+  .badge.enabled { background: #dcfce7; color: #166534; }
+  .badge.disabled { background: #fee2e2; color: #991b1b; }
+  #error-banner {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+    white-space: pre-wrap;
+  }
+  form.invite { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  form.invite input[type="email"] {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  header { display: flex; justify-content: space-between; align-items: center; }
+  .muted { color: #666; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<div id="login-view">
+  <h1>社内向け Cognito 管理コンソール</h1>
+  <p class="muted">
+    Cognito の "admins" グループに所属するユーザーのみ利用できます。
+  </p>
+  <button class="primary" id="login-button">Cognito でログイン</button>
+</div>
+
+<div id="console-view" class="hidden">
+  <header>
+    <h1>社内向け Cognito 管理コンソール</h1>
+    <button id="logout-button">ログアウト</button>
+  </header>
+
+  <div id="error-banner" class="hidden"></div>
+
+  <form class="invite" id="invite-form">
+    <input type="email" id="invite-email" placeholder="user@example.com" required />
+    <button class="primary" type="submit">ユーザーを招待</button>
+  </form>
+  <p class="muted">招待すると、Cognito が仮パスワード付きのメールを自動送信します。</p>
+
+  <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+    <strong>ユーザー一覧</strong>
+    <button id="refresh-button">再読み込み</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>メール</th>
+        <th>状態</th>
+        <th>有効</th>
+        <th>作成日時</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="user-rows">
+      <tr><td colspan="5" class="muted">読み込み中...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const CONFIG = window.ADMIN_CONSOLE_CONFIG;
+  const STORAGE_KEYS = {
+    verifier: "admin_console_pkce_verifier",
+    state: "admin_console_oauth_state",
+    accessToken: "admin_console_access_token",
+  };
+
+  const loginView = document.getElementById("login-view");
+  const consoleView = document.getElementById("console-view");
+  const errorBanner = document.getElementById("error-banner");
+  const userRows = document.getElementById("user-rows");
+
+  // ---- PKCE ヘルパー -------------------------------------------------
+
+  function base64UrlEncode(bytes) {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function randomString(length) {
+    const bytes = new Uint8Array(length);
+    crypto.getRandomValues(bytes);
+    return base64UrlEncode(bytes).slice(0, length);
+  }
+
+  async function sha256Base64Url(input) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+    return base64UrlEncode(new Uint8Array(digest));
+  }
+
+  // ---- ログイン / コールバック -----------------------------------------
+
+  async function login() {
+    const verifier = randomString(64);
+    const state = randomString(32);
+    sessionStorage.setItem(STORAGE_KEYS.verifier, verifier);
+    sessionStorage.setItem(STORAGE_KEYS.state, state);
+
+    const challenge = await sha256Base64Url(verifier);
+    const params = new URLSearchParams({
+      client_id: CONFIG.CLIENT_ID,
+      response_type: "code",
+      scope: "openid email profile",
+      redirect_uri: CONFIG.REDIRECT_URI,
+      state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+    location.href = `${CONFIG.HOSTED_UI_DOMAIN}/login?${params.toString()}`;
+  }
+
+  async function handleRedirectCallback() {
+    const url = new URL(location.href);
+    const code = url.searchParams.get("code");
+    const returnedState = url.searchParams.get("state");
+    if (!code) return false;
+
+    const expectedState = sessionStorage.getItem(STORAGE_KEYS.state);
+    if (!expectedState || returnedState !== expectedState) {
+      showError("認可レスポンスの state が一致しません。ログインをやり直してください。");
+      return false;
+    }
+
+    const verifier = sessionStorage.getItem(STORAGE_KEYS.verifier);
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: CONFIG.CLIENT_ID,
+      code,
+      redirect_uri: CONFIG.REDIRECT_URI,
+      code_verifier: verifier || "",
+    });
+
+    const res = await fetch(`${CONFIG.HOSTED_UI_DOMAIN}/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    // クエリを消してブラウザ履歴・再読み込み時の再送信を防ぐ
+    history.replaceState({}, "", CONFIG.REDIRECT_URI);
+    sessionStorage.removeItem(STORAGE_KEYS.verifier);
+    sessionStorage.removeItem(STORAGE_KEYS.state);
+
+    if (!res.ok) {
+      showError(`トークン交換に失敗しました (HTTP ${res.status})。`);
+      return false;
+    }
+
+    const tokens = await res.json();
+    sessionStorage.setItem(STORAGE_KEYS.accessToken, tokens.access_token);
+    return true;
+  }
+
+  function logout() {
+    sessionStorage.removeItem(STORAGE_KEYS.accessToken);
+    const params = new URLSearchParams({
+      client_id: CONFIG.CLIENT_ID,
+      logout_uri: CONFIG.REDIRECT_URI,
+    });
+    location.href = `${CONFIG.HOSTED_UI_DOMAIN}/logout?${params.toString()}`;
+  }
+
+  // ---- 管理 API 呼び出し -------------------------------------------------
+
+  async function callAdminApi(path, options) {
+    const token = sessionStorage.getItem(STORAGE_KEYS.accessToken);
+    const res = await fetch(`${CONFIG.API_ENDPOINT}${path}`, {
+      ...options,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(options && options.body ? { "content-type": "application/json" } : {}),
+        ...(options ? options.headers : {}),
+      },
+    });
+
+    if (res.status === 401) {
+      showError("認証が切れました。再度ログインしてください。");
+      sessionStorage.removeItem(STORAGE_KEYS.accessToken);
+      showLoginView();
+      throw new Error("unauthorized");
+    }
+    if (res.status === 403) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error?.message ?? "admins グループへの所属が必要です。");
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  async function loadUsers() {
+    userRows.innerHTML = `<tr><td colspan="5" class="muted">読み込み中...</td></tr>`;
+    try {
+      const data = await callAdminApi("/admin/users");
+      renderUsers(data.users ?? []);
+    } catch (err) {
+      showError(`ユーザー一覧の取得に失敗しました: ${err.message}`);
+      userRows.innerHTML = `<tr><td colspan="5" class="muted">読み込みに失敗しました</td></tr>`;
+    }
+  }
+
+  function renderUsers(users) {
+    if (users.length === 0) {
+      userRows.innerHTML = `<tr><td colspan="5" class="muted">ユーザーがいません</td></tr>`;
+      return;
+    }
+
+    userRows.innerHTML = "";
+    for (const user of users) {
+      const tr = document.createElement("tr");
+
+      const badgeClass = user.enabled ? "enabled" : "disabled";
+      const badgeText = user.enabled ? "有効" : "無効";
+
+      tr.innerHTML = `
+        <td>${escapeHtml(user.email ?? "(不明)")}<div class="muted">${user.status ?? ""}</div></td>
+        <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+        <td>${user.enabled ? "true" : "false"}</td>
+        <td>${user.created_at ? new Date(user.created_at).toLocaleString("ja-JP") : "-"}</td>
+        <td class="actions"></td>
+      `;
+
+      const actionsCell = tr.querySelector(".actions");
+
+      const toggleButton = document.createElement("button");
+      toggleButton.textContent = user.enabled ? "無効化" : "有効化";
+      toggleButton.addEventListener("click", () => toggleEnabled(user));
+      actionsCell.appendChild(toggleButton);
+
+      const resetButton = document.createElement("button");
+      resetButton.textContent = "パスワードリセット";
+      resetButton.addEventListener("click", () => resetPassword(user));
+      actionsCell.appendChild(resetButton);
+
+      const deleteButton = document.createElement("button");
+      deleteButton.textContent = "削除";
+      deleteButton.className = "danger";
+      deleteButton.addEventListener("click", () => deleteUser(user));
+      actionsCell.appendChild(deleteButton);
+
+      userRows.appendChild(tr);
+    }
+  }
+
+  async function inviteUser(email) {
+    await callAdminApi("/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    await loadUsers();
+  }
+
+  async function toggleEnabled(user) {
+    const action = user.enabled ? "disable" : "enable";
+    try {
+      await callAdminApi(`/admin/users/${encodeURIComponent(user.username)}/${action}`, {
+        method: "POST",
+      });
+      await loadUsers();
+    } catch (err) {
+      showError(`操作に失敗しました: ${err.message}`);
+    }
+  }
+
+  async function resetPassword(user) {
+    if (!confirm(`${user.email} にパスワード再設定メールを送信しますか?`)) return;
+    try {
+      await callAdminApi(`/admin/users/${encodeURIComponent(user.username)}/reset-password`, {
+        method: "POST",
+      });
+      alert("パスワード再設定メールを送信しました。");
+    } catch (err) {
+      showError(`操作に失敗しました: ${err.message}`);
+    }
+  }
+
+  async function deleteUser(user) {
+    if (!confirm(`${user.email} を完全に削除します。元に戻せません。よろしいですか?`)) return;
+    try {
+      await callAdminApi(`/admin/users/${encodeURIComponent(user.username)}`, {
+        method: "DELETE",
+      });
+      await loadUsers();
+    } catch (err) {
+      showError(`操作に失敗しました: ${err.message}`);
+    }
+  }
+
+  // ---- UI ヘルパー -------------------------------------------------------
+
+  function showError(message) {
+    errorBanner.textContent = message;
+    errorBanner.classList.remove("hidden");
+  }
+
+  function clearError() {
+    errorBanner.classList.add("hidden");
+    errorBanner.textContent = "";
+  }
+
+  function showLoginView() {
+    loginView.classList.remove("hidden");
+    consoleView.classList.add("hidden");
+  }
+
+  function showConsoleView() {
+    loginView.classList.add("hidden");
+    consoleView.classList.remove("hidden");
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement("div");
+    div.textContent = value;
+    return div.innerHTML;
+  }
+
+  // ---- 初期化 -------------------------------------------------------------
+
+  document.getElementById("login-button").addEventListener("click", login);
+  document.getElementById("logout-button").addEventListener("click", logout);
+  document.getElementById("refresh-button").addEventListener("click", () => {
+    clearError();
+    loadUsers();
+  });
+  document.getElementById("invite-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearError();
+    const input = document.getElementById("invite-email");
+    try {
+      await inviteUser(input.value);
+      input.value = "";
+    } catch (err) {
+      showError(`招待に失敗しました: ${err.message}`);
+    }
+  });
+
+  (async function init() {
+    if (location.search.includes("code=")) {
+      const success = await handleRedirectCallback();
+      if (!success) {
+        showLoginView();
+        return;
+      }
+    }
+
+    if (sessionStorage.getItem(STORAGE_KEYS.accessToken)) {
+      showConsoleView();
+      await loadUsers();
+    } else {
+      showLoginView();
+    }
+  })();
+})();
+</script>
+
+</body>
+</html>
