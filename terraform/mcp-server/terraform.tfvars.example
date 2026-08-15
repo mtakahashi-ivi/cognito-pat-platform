@@ -1,0 +1,9 @@
+# 必須: ../platform を apply した後に出力される値を貼り付ける
+# (../platform の `mcp_service_tfvars` 出力をそのままコピーしてもよい)
+authorizer_lambda_function_name = "pat-service-dev-authorizer"
+authorizer_lambda_invoke_arn    = "arn:aws:apigateway:ap-northeast-1:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-northeast-1:123456789012:function:pat-service-dev-authorizer/invocations"
+
+# 任意
+aws_region   = "ap-northeast-1"
+environment  = "dev"
+project_name = "mcp-server"

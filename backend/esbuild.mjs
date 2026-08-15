@@ -6,7 +6,6 @@ const entries = {
   "list-pats": "src/handlers/list-pats.ts",
   "revoke-pat": "src/handlers/revoke-pat.ts",
   "sample-protected": "src/handlers/sample-protected.ts",
-  "mcp-server": "src/handlers/mcp-server.ts",
   "admin-api": "src/handlers/admin-api.ts",
   authorizer: "src/authorizer/index.ts",
 };

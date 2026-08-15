@@ -36,11 +36,6 @@ locals {
       description      = "GET /pat - list the caller's personal access tokens"
       dynamodb_actions = ["dynamodb:Query"]
     }
-    mcp_server = {
-      dist_dir         = "mcp-server"
-      description      = "Internal MCP server protected by the PAT/JWT authorizer"
-      dynamodb_actions = []
-    }
     revoke_pat = {
       dist_dir         = "revoke-pat"
       description      = "DELETE /pat/{token_id} - revoke a personal access token"

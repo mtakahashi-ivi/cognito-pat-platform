@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { handle, type LambdaEvent } from "hono/aws-lambda";
 import { z } from "zod";
 
-/** Lambda Authorizer (PAT/JWT 両対応) がセットするコンテキスト */
+/** Lambda Authorizer (PAT/JWT 両対応、terraform/platform 管理) がセットするコンテキスト */
 interface AuthorizerContext {
   user_id?: string;
   auth_method?: string;

@@ -103,10 +103,6 @@ locals {
       lambda     = "sample_protected"
       authorizer = "pat"
     }
-    "ANY /mcp" = {
-      lambda     = "mcp_server"
-      authorizer = "pat"
-    }
     "ANY /admin/{proxy+}" = {
       # admins グループによる認可はハンドラー内で行う (JWT オーソライザーは署名検証のみ)
       lambda     = "admin_api"

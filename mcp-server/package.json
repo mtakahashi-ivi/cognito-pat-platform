@@ -1,0 +1,22 @@
+{
+  "name": "mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PAT/JWT-protected internal MCP server (Lambda), authorized by the shared authorizer from ../backend",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/mcp": "^0.3.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "^4.12.33",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.5.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.2"
+  }
+}

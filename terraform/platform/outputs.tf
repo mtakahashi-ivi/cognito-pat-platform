@@ -8,6 +8,19 @@ output "authorizer_function_name" {
   value       = aws_lambda_function.main["authorizer"].function_name
 }
 
+output "authorizer_lambda_invoke_arn" {
+  description = "Invoke ARN of the PAT/JWT Lambda authorizer function (paste into ../mcp-server/terraform.tfvars, or any other backend stack that reuses this authorizer)"
+  value       = aws_lambda_function.main["authorizer"].invoke_arn
+}
+
+output "mcp_service_tfvars" {
+  description = "Values to paste into ../mcp-server/terraform.tfvars"
+  value       = <<-EOT
+    authorizer_lambda_function_name = "${aws_lambda_function.main["authorizer"].function_name}"
+    authorizer_lambda_invoke_arn    = "${aws_lambda_function.main["authorizer"].invoke_arn}"
+  EOT
+}
+
 output "cognito_issuer" {
   description = "Cognito issuer URL used by the JWT authorizer"
   value       = local.cognito_issuer

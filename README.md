@@ -8,18 +8,29 @@ PAT 発行・管理・検証基盤です。
 
 ```
 ┌──────────────┐  Cognito JWT   ┌─────────────────────────────────────────┐
-│ ブラウザ      │──────────────▶│ API Gateway (HTTP API)                   │
+│ ブラウザ      │──────────────▶│ API Gateway (HTTP API) — terraform/platform│
 │ (管理画面)    │                │                                          │
 └──────────────┘                │  [Cognito JWT Authorizer]                │
                                 │    POST   /pat          → create-pat     │
                                 │    GET    /pat          → list-pats      │──▶ DynamoDB
                                 │    DELETE /pat/{id}     → revoke-pat     │    pat-tokens
-┌──────────────┐  PAT or JWT    │                                          │    ├ PK: user_id
-│ CLI / MCP    │──────────────▶│  [Lambda Authorizer (PAT/JWT 両対応)]     │    ├ SK: token_id
-│ クライアント  │                │    GET /protected/whoami → sample        │    ├ GSI: token_hash
-└──────────────┘                │    (実運用: AgentCore/MCP バックエンド)   │    └ TTL: expires_at
+                                │    ANY    /admin/{proxy+} → admin-api    │    ├ PK: user_id
+┌──────────────┐  PAT or JWT    │                                          │    ├ SK: token_id
+│ CLI          │──────────────▶│  [Lambda Authorizer (PAT/JWT 両対応)]     │    ├ GSI: token_hash
+│ クライアント  │                │    GET /protected/whoami → sample        │    └ TTL: expires_at
+└──────────────┘                └───────────────┬─────────────────────────┘
+                                                 │ invoke_arn を出力し、
+                                                 │ 他スタックが同じ Authorizer を再利用する
+                                                 ▼
+┌──────────────┐  PAT or JWT    ┌─────────────────────────────────────────┐
+│ Claude Code  │──────────────▶│ API Gateway (HTTP API) — terraform/mcp-server│
+│ / Codex CLI  │                │  [同じ Lambda Authorizer を Authorizer   │
+└──────────────┘                │   リソースとして再登録(呼び出し先は共通)] │
+                                │    ANY /mcp → mcp-server Lambda          │
                                 └─────────────────────────────────────────┘
 ```
+
+MCP サーバは PAT 基盤本体(`terraform/platform`)とは**別の Terraform スタック・別の API Gateway**として独立しています。認証・認可のロジック(Lambda Authorizer)だけを `terraform/platform` の出力値(`authorizer_lambda_invoke_arn` 等)経由で共有し、コード・インフラ・デプロイのライフサイクルは完全に分離しています。詳細は [`terraform/mcp-server/`](terraform/mcp-server/) を参照してください。
 
 ### セキュリティ設計のポイント
 
@@ -42,22 +53,28 @@ PAT 発行・管理・検証基盤です。
 
 ```
 cognito-pat-platform/
-├── backend/                      # Lambda (Node.js / TypeScript)
+├── backend/                      # PAT 基盤本体の Lambda (Node.js / TypeScript)
 │   ├── src/
 │   │   ├── handlers/
 │   │   │   ├── create-pat.ts     # POST /pat        PAT 新規発行
 │   │   │   ├── list-pats.ts      # GET /pat         PAT 一覧
 │   │   │   ├── revoke-pat.ts     # DELETE /pat/{id} PAT 失効
 │   │   │   ├── sample-protected.ts # 動作確認用の保護エンドポイント
-│   │   │   ├── mcp-server.ts     # PAT 認証付き社内向け MCP サーバ (ANY /mcp)
 │   │   │   └── admin-api.ts      # 社内管理コンソール用 API (ANY /admin/*, admins グループ限定)
 │   │   ├── authorizer/
-│   │   │   └── index.ts          # PAT / Cognito JWT 両対応 Lambda Authorizer
+│   │   │   └── index.ts          # PAT / Cognito JWT 両対応 Lambda Authorizer (mcp-server/ からも共有)
 │   │   └── lib/
 │   │       ├── token.ts          # トークン生成・SHA-256 ハッシュ
 │   │       ├── dynamo.ts         # DynamoDB クライアント・型定義
 │   │       └── http.ts           # レスポンスヘルパー・JWT クレーム抽出
 │   ├── esbuild.mjs               # dist/<name>/index.js へバンドル
+│   ├── package.json
+│   └── tsconfig.json
+├── mcp-server/                   # PAT 認証付き社内向け MCP サーバ (独立した Lambda パッケージ)
+│   ├── src/
+│   │   └── handlers/
+│   │       └── mcp-server.ts     # ANY /mcp。backend/ とは別デプロイのため依存関係も独立
+│   ├── esbuild.mjs               # dist/mcp-server/index.js へバンドル
 │   ├── package.json
 │   └── tsconfig.json
 ├── terraform/
@@ -67,8 +84,17 @@ cognito-pat-platform/
 │   │   ├── variables.tf
 │   │   ├── locals.tf             # Lambda 定義マップ・共通環境変数
 │   │   ├── dynamodb.tf           # テーブル + GSI(token_hash) + TTL(expires_at)
-│   │   ├── lambda.tf             # Lambda ×6 + 関数別 IAM(最小権限)
+│   │   ├── lambda.tf             # Lambda ×5 + 関数別 IAM(最小権限)
 │   │   ├── apigateway.tf         # HTTP API + JWT/Lambda Authorizer + ルート
+│   │   ├── outputs.tf            # authorizer_lambda_invoke_arn 等、他スタックへの共有値を出力
+│   │   └── terraform.tfvars.example
+│   ├── mcp-server/               # MCP サーバ専用スタック (platform とは別 State / 別 API Gateway)
+│   │   ├── terraform.tf
+│   │   ├── providers.tf
+│   │   ├── variables.tf          # platform の出力値 (authorizer_lambda_*) を受け取る
+│   │   ├── locals.tf
+│   │   ├── lambda.tf             # mcp-server Lambda ×1 + 専用 IAM
+│   │   ├── apigateway.tf         # 独自の HTTP API + platform の Authorizer Lambda を再利用
 │   │   ├── outputs.tf
 │   │   └── terraform.tfvars.example
 │   └── cognito/                  # Cognito User Pool 作成用スタック (未所持の場合のみ)
@@ -139,13 +165,19 @@ CLI での JWT 取得(後述の「使い方 1」)もこのユーザーで行え�
 
 ### 1. Lambda のビルド
 
+`backend/`(PAT 管理・オーソライザー等)と `mcp-server/`(MCP サーバ)は別パッケージなので、それぞれ個別にビルドします。
+
 ```bash
 cd backend && npm ci && npm run build
 ```
 
-`backend/dist/<関数名>/index.js` が生成されます(Terraform がこれを zip 化します)。
+```bash
+cd mcp-server && npm ci && npm run build
+```
 
-### 2. Terraform 変数の設定
+`backend/dist/<関数名>/index.js` / `mcp-server/dist/mcp-server/index.js` が生成されます(Terraform がこれを zip 化します)。
+
+### 2. Terraform 変数の設定(PAT 基盤本体)
 
 ```bash
 cd terraform/platform && cp terraform.tfvars.example terraform.tfvars
@@ -153,7 +185,7 @@ cd terraform/platform && cp terraform.tfvars.example terraform.tfvars
 
 `terraform.tfvars` を編集し、実際の User Pool ID / App Client ID を設定してください。
 
-### 3. デプロイ
+### 3. デプロイ(PAT 基盤本体)
 
 ```bash
 cd terraform/platform && terraform init && terraform plan
@@ -163,7 +195,25 @@ cd terraform/platform && terraform init && terraform plan
 cd terraform/platform && terraform apply
 ```
 
-出力される `api_endpoint` が API のベース URL です。
+出力される `api_endpoint` が PAT 管理 API のベース URL です。また `mcp_service_tfvars` が
+次の手順でそのまま使えます。
+
+### 4. MCP サーバのデプロイ(任意)
+
+MCP サーバを使わない場合はこの手順は不要です。`terraform/platform` が先にデプロイ済みであることが前提です。
+
+```bash
+cd terraform/mcp-server && cp terraform.tfvars.example terraform.tfvars
+```
+
+`terraform.tfvars` の `authorizer_lambda_function_name` / `authorizer_lambda_invoke_arn` に、
+手順 3 で出力された `mcp_service_tfvars` の内容をそのまま貼り付けてください。
+
+```bash
+cd terraform/mcp-server && terraform init && terraform apply
+```
+
+出力される `api_endpoint` が MCP サーバの(PAT 管理 API とは別の)ベース URL です。
 
 ## 使い方
 
@@ -223,8 +273,10 @@ curl -sS "$API_ENDPOINT/protected/whoami" -H "Authorization: Bearer pat_live_...
 
 ### 5. MCP サーバとして Claude Code / Codex から接続する
 
-`ANY /mcp` には PAT/JWT 両対応の Lambda Authorizer 越しに MCP サーバ
-(Streamable HTTP、ステートレスモード)が配備されています。Streamable HTTP は
+MCP サーバは `terraform/mcp-server` が別デプロイする**専用の API Gateway**上で動きます
+(`$API_ENDPOINT` とは別のベース URL、以下 `$MCP_API_ENDPOINT` = `terraform/mcp-server` の
+`api_endpoint` 出力値)。認証には引き続き同じ PAT/JWT Lambda Authorizer(Streamable HTTP、
+ステートレスモード)が使われるため、発行済みの PAT はそのまま使えます。Streamable HTTP は
 Claude Code・Codex CLI のどちらも対応しているトランスポートなので、同じ
 エンドポイントを両方から利用できます。
 
@@ -232,7 +284,7 @@ Claude Code・Codex CLI のどちらも対応しているトランスポート�
 
 ```bash
 claude mcp add --transport http internal-tools \
-  "$API_ENDPOINT/mcp" \
+  "$MCP_API_ENDPOINT/mcp" \
   --header "Authorization: Bearer pat_live_..."
 ```
 
@@ -244,7 +296,7 @@ Codex は bearer トークンをそのままコマンドに渡さず、環境変
 ```bash
 export INTERNAL_TOOLS_PAT="pat_live_..."
 codex mcp add internal-tools \
-  --url "$API_ENDPOINT/mcp" \
+  --url "$MCP_API_ENDPOINT/mcp" \
   --bearer-token-env-var INTERNAL_TOOLS_PAT
 ```
 
@@ -253,7 +305,7 @@ codex mcp add internal-tools \
 
 ```toml
 [mcp_servers.internal-tools]
-url = "https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/mcp"
+url = "https://yyyyyyyyyy.execute-api.ap-northeast-1.amazonaws.com/mcp"
 bearer_token_env_var = "INTERNAL_TOOLS_PAT"
 ```
 
@@ -261,7 +313,7 @@ bearer_token_env_var = "INTERNAL_TOOLS_PAT"
 偏見データを返すサンプルツール。過去に stdio 版として作った
 [mtakahashi-prejudice-mcp-local](https://github.com/mtakahashi-ivi/mtakahashi-prejudice-mcp-local)
 を Lambda / Streamable HTTP 向けに移植したもの)の 2 つです。実運用では
-`backend/src/handlers/mcp-server.ts` の `get_prejudice` を社内 API 呼び出しに
+`mcp-server/src/handlers/mcp-server.ts` の `get_prejudice` を社内 API 呼び出しに
 差し替えてください。ツール実装には Authorizer が検証済みの `user_id` が渡るため、
 ユーザーごとの権限制御と監査ログに利用できます。
 
@@ -314,11 +366,17 @@ Hosted UI へ PKCE 付き認可コードフローでログインし、取得し�
 
 ## 実運用に向けた拡張ポイント
 
-- **バックエンドの追加**: MCP サーバ(`ANY /mcp`)は実装済み。AgentCore ゲートウェイ等の
-  別バックエンドを追加する場合も、`terraform/platform/apigateway.tf` の `local.api_routes` に
-  ルートを 1 行追加するだけで PAT/JWT 認証が適用されます。
+- **バックエンドの追加**: `terraform/platform` に同居させる(`local.api_routes` に
+  ルートを 1 行追加するだけで PAT/JWT 認証が適用される)手軽さと、`terraform/mcp-server` の
+  ように**別スタック・別 API Gateway として分離する**独立性のトレードオフがあります。
+  デプロイのライフサイクルやチームの所有権を分けたいバックエンド(MCP サーバがまさにこれ)は
+  後者のパターンで、`authorizer_lambda_invoke_arn` / `authorizer_lambda_function_name` を
+  `terraform/platform` から出力として受け取り、独自の Authorizer リソースとして
+  再登録すれば同じ認証を再利用できます。
 - **Authorizer キャッシュ**: 高トラフィック環境では `authorizer_result_ttl_in_seconds` を
   60〜300 秒程度にすると DynamoDB 読み取りを削減できます(失効反映がその分遅延)。
+  この設定は Authorizer リソースを持つ側(`terraform/platform` と `terraform/mcp-server` の
+  両方)でそれぞれ個別に調整できます。
 - **CORS**: `cors_allow_origins` を管理画面 SPA のオリジンに限定してください。
 - **レート制限**: `default_route_settings` のスロットリング値を要件に合わせて調整してください。
 - **監査**: PAT レコードは失効後も `revoked_at` / `last_used_at` 付きで残ります
@@ -331,5 +389,13 @@ cd backend && npm run typecheck
 ```
 
 ```bash
+cd mcp-server && npm run typecheck
+```
+
+```bash
 cd terraform/platform && terraform fmt -check -recursive && terraform validate
+```
+
+```bash
+cd terraform/mcp-server && terraform fmt -check -recursive && terraform validate
 ```
