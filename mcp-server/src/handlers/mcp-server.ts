@@ -40,14 +40,17 @@ function buildMcpServer(userId: string): McpServer {
       description: "現在の認証ユーザーの情報を返します",
       inputSchema: {},
     },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ user_id: userId }),
-        },
-      ],
-    }),
+    async () => {
+      console.log("[mcp-server] tool call: whoami", { userId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ user_id: userId }),
+          },
+        ],
+      };
+    },
   );
 
   server.registerTool(
@@ -60,9 +63,7 @@ function buildMcpServer(userId: string): McpServer {
     async ({ keyword }) => {
       // 誰が・いつ・どのキーワードを引いたかを残す。ローカル stdio 版にはなかった、
       // 複数ユーザーが共有する Lambda ならではの監査ログ
-      console.log(
-        JSON.stringify({ audit: "get_prejudice", user_id: userId, keyword }),
-      );
+      console.log("[mcp-server] tool call: get_prejudice", { userId, keyword });
 
       const prejudice = Object.hasOwn(PREJUDICES, keyword)
         ? PREJUDICES[keyword as keyof typeof PREJUDICES]
@@ -89,8 +90,11 @@ app.all("/mcp", async (c) => {
   };
   const userId = requestContext.authorizer?.lambda?.user_id;
   if (!userId) {
+    console.warn("[mcp-server] unauthorized request: missing user_id in authorizer context");
     return c.json({ error: "unauthorized" }, 401);
   }
+
+  console.log("[mcp-server] request received", { userId });
 
   const server = buildMcpServer(userId);
   // Lambda はレスポンスストリーミング不可のため JSON レスポンスモードで動かす

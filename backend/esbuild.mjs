@@ -19,8 +19,9 @@ await Promise.all(
       platform: "node",
       target: "node22",
       format: "cjs",
-      minify: true,
-      sourcemap: false,
+      // テスト用: スタックトレースを読みやすくするため minify を無効化し、sourcemap を有効化している
+      minify: false,
+      sourcemap: true,
       // AWS SDK v3 は Lambda ランタイムに同梱されているためバンドル対象外
       external: ["@aws-sdk/*"],
     }),

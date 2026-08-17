@@ -38,11 +38,12 @@ export async function handler(
   try {
     const token = extractBearerToken(event);
     if (!token) {
+      console.log("[authorizer] no bearer token, denying");
       return deny();
     }
-    return token.startsWith(PAT_DISCRIMINATOR)
-      ? await authorizePat(token)
-      : await authorizeJwt(token);
+    const isPat = token.startsWith(PAT_DISCRIMINATOR);
+    console.log("[authorizer] verifying token", { method: isPat ? "pat" : "jwt" });
+    return isPat ? await authorizePat(token) : await authorizeJwt(token);
   } catch (error) {
     // 認可の失敗理由 (トークン値等) はクライアントに漏らさずログにのみ残す
     console.error("Authorization failed:", error instanceof Error ? error.message : error);
@@ -65,18 +66,23 @@ async function authorizePat(token: string): Promise<AuthResult> {
 
   const item = result.Items?.[0] as PatItem | undefined;
   if (!item) {
+    console.log("[authorizer] pat not found, denying");
     return deny();
   }
   if (item.is_revoked === true) {
+    console.log("[authorizer] pat revoked, denying", { tokenId: item.token_id });
     return deny();
   }
   // DynamoDB TTL の削除は最大48時間程度遅延しうるため、期限は必ずここで確認する
   const nowEpoch = Math.floor(Date.now() / 1000);
   if (typeof item.expires_at !== "number" || item.expires_at <= nowEpoch) {
+    console.log("[authorizer] pat expired, denying", { tokenId: item.token_id });
     return deny();
   }
 
   await touchLastUsed(item);
+
+  console.log("[authorizer] pat allowed", { userId: item.user_id, tokenId: item.token_id });
 
   return allow({
     user_id: item.user_id,
@@ -87,6 +93,7 @@ async function authorizePat(token: string): Promise<AuthResult> {
 
 async function authorizeJwt(token: string): Promise<AuthResult> {
   const payload = await jwtVerifier.verify(token);
+  console.log("[authorizer] jwt allowed", { userId: payload.sub });
   return allow({
     user_id: payload.sub,
     auth_method: "jwt",

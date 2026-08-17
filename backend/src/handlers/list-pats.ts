@@ -15,11 +15,15 @@ export async function handler(
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const userId = getUserId(event);
   const nowEpoch = Math.floor(Date.now() / 1000);
+  console.log("[list-pats] request received", { userId });
 
   const items: PatItem[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
+  let page = 0;
 
   do {
+    page += 1;
+    console.log("[list-pats] querying DynamoDB", { userId, page });
     const result = await ddb.send(
       new QueryCommand({
         TableName: TABLE_NAME,
@@ -48,6 +52,8 @@ export async function handler(
       last_used_at: item.last_used_at,
     }))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  console.log("[list-pats] found tokens", { userId, count: tokens.length });
 
   return json(200, { tokens });
 }

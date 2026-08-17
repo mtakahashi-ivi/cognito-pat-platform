@@ -20,6 +20,7 @@ export async function handler(
   event: APIGatewayProxyEventV2WithLambdaAuthorizer<AuthorizerContext>,
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const { user_id, auth_method, token_id } = event.requestContext.authorizer.lambda;
+  console.log("[sample-protected] authenticated request", { user_id, auth_method, token_id });
 
   return json(200, {
     message: "authenticated",

@@ -30,6 +30,7 @@ app.use("*", async (c, next) => {
   const claims = getJwtClaims({ requestContext: c.env.event.requestContext } as never);
   const groups = parseGroupsClaim(claims["cognito:groups"]);
   if (!groups.includes(ADMIN_GROUP_NAME)) {
+    console.warn("[admin-api] forbidden: missing admin group", { sub: claims.sub, groups });
     return c.json(
       {
         error: {
@@ -53,6 +54,8 @@ app.post("/admin/users", async (c) => {
     );
   }
 
+  console.log("[admin-api] inviting user", { email: body.email });
+
   const result = await cognito.send(
     new AdminCreateUserCommand({
       UserPoolId: USER_POOL_ID,
@@ -66,6 +69,8 @@ app.post("/admin/users", async (c) => {
     }),
   );
 
+  console.log("[admin-api] user invited", { username: result.User?.Username });
+
   return c.json(
     {
       username: result.User?.Username,
@@ -78,6 +83,8 @@ app.post("/admin/users", async (c) => {
 
 // GET /admin/users - ユーザー一覧
 app.get("/admin/users", async (c) => {
+  console.log("[admin-api] listing users");
+
   const result = await cognito.send(
     new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }),
   );
@@ -90,6 +97,8 @@ app.get("/admin/users", async (c) => {
     created_at: user.UserCreateDate?.toISOString(),
   }));
 
+  console.log("[admin-api] listed users", { count: users.length });
+
   return c.json({ users });
 });
 
@@ -98,6 +107,8 @@ app.post("/admin/users/:username/disable", async (c) => {
   const username = c.req.param("username");
   const guard = guardSelf(c, username);
   if (guard) return guard;
+
+  console.log("[admin-api] disabling user", { username });
 
   await cognito.send(
     new AdminDisableUserCommand({ UserPoolId: USER_POOL_ID, Username: username }),
@@ -108,6 +119,8 @@ app.post("/admin/users/:username/disable", async (c) => {
 // POST /admin/users/:username/enable - 無効化の解除
 app.post("/admin/users/:username/enable", async (c) => {
   const username = c.req.param("username");
+
+  console.log("[admin-api] enabling user", { username });
 
   await cognito.send(
     new AdminEnableUserCommand({ UserPoolId: USER_POOL_ID, Username: username }),
@@ -121,6 +134,8 @@ app.delete("/admin/users/:username", async (c) => {
   const guard = guardSelf(c, username);
   if (guard) return guard;
 
+  console.log("[admin-api] deleting user", { username });
+
   await cognito.send(
     new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: username }),
   );
@@ -132,6 +147,8 @@ app.delete("/admin/users/:username", async (c) => {
 // 実際のパスワードは本人以外(管理者を含む)の目に触れない。
 app.post("/admin/users/:username/reset-password", async (c) => {
   const username = c.req.param("username");
+
+  console.log("[admin-api] resetting password", { username });
 
   await cognito.send(
     new AdminResetUserPasswordCommand({ UserPoolId: USER_POOL_ID, Username: username }),

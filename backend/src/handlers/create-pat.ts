@@ -21,6 +21,7 @@ export async function handler(
   event: APIGatewayProxyEventV2WithJWTAuthorizer,
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const userId = getUserId(event);
+  console.log("[create-pat] request received", { userId });
 
   const body = parseJsonBody(event.body);
   if (body === null) {
@@ -55,6 +56,8 @@ export async function handler(
   const now = new Date();
   const expiresAtEpoch = Math.floor(now.getTime() / 1000) + expiresInDays * SECONDS_PER_DAY;
 
+  console.log("[create-pat] writing new token to DynamoDB", { userId, tokenId, expiresInDays });
+
   const item: PatItem = {
     user_id: userId,
     token_id: tokenId,
@@ -72,6 +75,8 @@ export async function handler(
       ConditionExpression: "attribute_not_exists(token_id)",
     }),
   );
+
+  console.log("[create-pat] token issued", { userId, tokenId });
 
   return json(201, {
     id: tokenId,

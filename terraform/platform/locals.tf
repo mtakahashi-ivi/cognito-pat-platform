@@ -12,6 +12,9 @@ locals {
     PAT_PREFIX           = var.pat_prefix
     TABLE_NAME           = aws_dynamodb_table.pat_token.name
     TOKEN_HASH_INDEX     = "token_hash-index"
+    # テスト用: esbuild の sourcemap (index.js.map) を Node.js に解決させ、
+    # CloudWatch Logs のスタックトレースを元の TypeScript の行番号で読めるようにする
+    NODE_OPTIONS = "--enable-source-maps"
   }
 
   # Lambda 定義。dynamodb_actions は最小権限で関数ごとに付与する

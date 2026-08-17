@@ -8,8 +8,9 @@ await build({
   platform: "node",
   target: "node22",
   format: "cjs",
-  minify: true,
-  sourcemap: false,
+  // テスト用: スタックトレースを読みやすくするため minify を無効化し、sourcemap を有効化している
+  minify: false,
+  sourcemap: true,
 });
 
 console.log("Built mcp-server bundle into dist/");

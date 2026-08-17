@@ -37,6 +37,14 @@ resource "aws_lambda_function" "mcp_server" {
   memory_size      = 256
   timeout          = 10
 
+  environment {
+    variables = {
+      # テスト用: esbuild の sourcemap (index.js.map) を Node.js に解決させ、
+      # CloudWatch Logs のスタックトレースを元の TypeScript の行番号で読めるようにする
+      NODE_OPTIONS = "--enable-source-maps"
+    }
+  }
+
   depends_on = [aws_cloudwatch_log_group.mcp_server]
 }
 

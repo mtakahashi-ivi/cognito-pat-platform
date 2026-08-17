@@ -23,6 +23,8 @@ export async function handler(
     return errorResponse(400, "missing_token_id", "Path parameter token_id is required.");
   }
 
+  console.log("[revoke-pat] request received", { userId, tokenId });
+
   try {
     await ddb.send(
       new UpdateCommand({
@@ -38,10 +40,13 @@ export async function handler(
     );
   } catch (error) {
     if (error instanceof ConditionalCheckFailedException) {
+      console.warn("[revoke-pat] token not found", { userId, tokenId });
       return errorResponse(404, "not_found", "Token not found.");
     }
     throw error;
   }
+
+  console.log("[revoke-pat] token revoked", { userId, tokenId });
 
   return json(200, { id: tokenId, is_revoked: true });
 }
