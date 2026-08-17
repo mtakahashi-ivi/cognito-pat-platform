@@ -35,25 +35,6 @@ function buildMcpServer(userId: string): McpServer {
   });
 
   server.registerTool(
-    "whoami",
-    {
-      description: "現在の認証ユーザーの情報を返します",
-      inputSchema: {},
-    },
-    async () => {
-      console.log("[mcp-server] tool call: whoami", { userId });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ user_id: userId }),
-          },
-        ],
-      };
-    },
-  );
-
-  server.registerTool(
     "get_prejudice",
     {
       description:

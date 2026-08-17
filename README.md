@@ -309,13 +309,15 @@ url = "https://yyyyyyyyyy.execute-api.ap-northeast-1.amazonaws.com/mcp"
 bearer_token_env_var = "INTERNAL_TOOLS_PAT"
 ```
 
-ツールは `whoami`(認証ユーザー確認)と `get_prejudice`(キーワードに対する固定の
-偏見データを返すサンプルツール。過去に stdio 版として作った
+ツールは `get_prejudice`(キーワードに対する固定の偏見データを返すサンプルツール。
+過去に stdio 版として作った
 [mtakahashi-prejudice-mcp-local](https://github.com/mtakahashi-ivi/mtakahashi-prejudice-mcp-local)
-を Lambda / Streamable HTTP 向けに移植したもの)の 2 つです。実運用では
-`mcp-server/src/handlers/mcp-server.ts` の `get_prejudice` を社内 API 呼び出しに
-差し替えてください。ツール実装には Authorizer が検証済みの `user_id` が渡るため、
-ユーザーごとの権限制御と監査ログに利用できます。
+を Lambda / Streamable HTTP 向けに移植したもの)の 1 つです。認証ユーザー確認は
+`backend` 側の `GET /protected/whoami` と機能が重複するため MCP ツールとしては
+持たせていません。実運用では `mcp-server/src/handlers/mcp-server.ts` の
+`get_prejudice` を社内 API 呼び出しに差し替えてください。ツール実装には
+Authorizer が検証済みの `user_id` が渡るため、ユーザーごとの権限制御と監査ログに
+利用できます。
 
 ### 6. PAT の失効(`DELETE /pat/{token_id}`)
 
